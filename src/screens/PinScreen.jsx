@@ -38,11 +38,18 @@ export default function PinScreen({ onAuth }) {
   return (
     <div className="pin-screen" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
       <div className="pin-logo">
-        <div className="pin-logo-mark">
-          <svg viewBox="0 0 24 24">
-            <path d="M3 9h18M3 15h18M9 3v18M15 3v18" strokeLinecap="round"/>
-          </svg>
-        </div>
+        <img 
+          src="/logo.png" 
+          alt="The Eateries Logo" 
+          style={{ 
+            width: '72px', 
+            height: '72px', 
+            borderRadius: '16px', 
+            marginBottom: '14px', 
+            objectFit: 'cover',
+            border: '1px solid var(--border2)' // Optional: keeps a subtle border around it
+          }} 
+        />
         <div className="pin-name">The Eateries</div>
         <div className="pin-sub">admin panel</div>
       </div>
