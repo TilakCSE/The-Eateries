@@ -11,7 +11,7 @@ export default function AnalyticsScreen() {
   const [loading, setLoading] = useState(false)
   const [metrics, setMetrics] = useState({
     totalRev: 0, cash: 0, upi: 0, settled: 0, 
-    sessions: 0, frames: 0, topSpenders: [], topHours: []
+    sessions: 0, frames: 0, topSpenders: [], topHours: [], tableStats: []
   })
 
   function getDateRange(tf) {
@@ -49,22 +49,36 @@ export default function AnalyticsScreen() {
       let cash = 0, upi = 0, totalFrames = 0
       const playerSpends = {}
       const playerHours = {}
+      const tStats = {}
+
+      let totalRevenueGenerated = 0; // NEW: Track total value created
 
       sessions?.forEach(s => {
         totalFrames += (s.frames || 0)
         
         const sessionPaid = s.session_players.reduce((sum, p) => sum + (p.amount_paid || 0), 0)
+        const sessionTotalCharge = s.total_charge || 0 // The true cost of the table
+        
+        totalRevenueGenerated += sessionTotalCharge;
+
         if (s.payment_method === 'upi') upi += sessionPaid
         else cash += sessionPaid
 
         const hoursInSession = (s.elapsed_seconds || 0) / 3600
 
+        // Aggregate Table Stats (Uses true total charge)
+        if (!tStats[s.table_id]) {
+          tStats[s.table_id] = { name: s.table_name, rev: 0, frames: 0 }
+        }
+        tStats[s.table_id].rev += sessionTotalCharge
+        tStats[s.table_id].frames += (s.frames || 0)
+
+        // Aggregate Player Stats
         s.session_players.forEach(p => {
           if (p.customer_id) {
             if (p.amount_paid > 0) {
               playerSpends[p.customer_id] = (playerSpends[p.customer_id] || 0) + p.amount_paid
             }
-            // Add hours played to this customer for this specific timeframe
             playerHours[p.customer_id] = (playerHours[p.customer_id] || 0) + hoursInSession
           }
         })
@@ -97,13 +111,16 @@ export default function AnalyticsScreen() {
         .sort((a, b) => b.hours - a.hours)
         .slice(0, 5)
 
+      const tableStats = Object.values(tStats).sort((a, b) => b.rev - a.rev)
+
       setMetrics({
-        totalRev: cash + upi,
+        totalRev: totalRevenueGenerated,
         cash, upi, settled,
         sessions: sessions?.length || 0,
         frames: totalFrames,
         topSpenders,
-        topHours
+        topHours,
+        tableStats
       })
 
     } catch (e) {
@@ -132,6 +149,10 @@ export default function AnalyticsScreen() {
     rows.push([''])
     rows.push(['Top Players (By Time Played)', 'Hours'])
     metrics.topHours.forEach(p => rows.push([p.name, p.hours.toFixed(1)]))
+
+    rows.push([''])
+    rows.push(['Table Performance', 'Frames Played', 'Revenue (INR)'])
+    metrics.tableStats.forEach(t => rows.push([t.name, t.frames, t.rev]))
 
     const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n")
     const encodedUri = encodeURI(csvContent)
@@ -196,6 +217,25 @@ export default function AnalyticsScreen() {
                 <div className="stat-value" style={{ fontSize: 24, fontFamily: 'var(--mono)', color: 'var(--text2)' }}>₹{metrics.settled.toLocaleString('en-IN')}</div>
               </div>
             </div>
+
+            {/* Table Performance */}
+            <div className="section-label" style={{ marginTop: 24, marginBottom: 12 }}>Table Performance ({timeframe})</div>
+            {metrics.tableStats.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--text3)' }}>No table data recorded.</div>
+            ) : (
+              metrics.tableStats.map((t, i) => (
+                <div key={i} className="card" style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text3)', width: 20 }}>{i + 1}.</div>
+                    <div>
+                      <div style={{ fontSize: '1.1rem', fontWeight: 600 }}>{t.name}</div>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 2 }}>{t.frames} frames played</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--green)' }}>₹{t.rev.toLocaleString('en-IN')}</div>
+                </div>
+              ))
+            )}
 
             {/* Top Spenders */}
             <div className="section-label" style={{ marginTop: 24, marginBottom: 12 }}>Top Spenders ({timeframe})</div>

@@ -35,12 +35,24 @@ export default function CheckoutModal({
   function initPlayerSplits() {
     const pa = {};
     const pb = {};
-    players.forEach((_, i) => {
-      pa[i] = "";
-      pb[i] = "";
-    });
-    setPlayerAmounts(pa);
-    setPlayerToBalance(pb);
+    
+    if (session?.billing_mode === 'frame' && players.length > 1) {
+       let autoTotal = 0;
+       players.forEach((p, i) => {
+         const owed = (p.frames_lost || 0) * (table?.rate_frame || 0);
+         pa[i] = owed > 0 ? String(owed) : "";
+         pb[i] = "";
+         autoTotal += owed;
+       });
+       setAmount(autoTotal > 0 ? String(autoTotal) : "");
+       setPlayerAmounts(pa);
+       setPlayerToBalance(pb);
+       setSplitType('custom'); // Force custom view for frame breakdown
+    } else {
+       players.forEach((_, i) => { pa[i] = ""; pb[i] = ""; });
+       setPlayerAmounts(pa);
+       setPlayerToBalance(pb);
+    }
   }
 
   const total = parseFloat(amount) || 0;
@@ -141,7 +153,6 @@ export default function CheckoutModal({
         await supabase
           .from("customers")
           .update({
-            visits: (c.visits || 0) + 1,
             total_spent: (c.total_spent || 0) + p.amount_paid,
             total_hours: (c.total_hours || 0) + elapsedSeconds / 3600,
             total_frames: (c.total_frames || 0) + (session.frames || 0),
@@ -416,64 +427,43 @@ export default function CheckoutModal({
           {/* EQUAL or CUSTOM: Manual Inputs */}
           {(splitType === "custom" || splitType === "equal") && (
             <div className="summary-block">
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "var(--text3)",
-                  marginBottom: 10,
-                  fontFamily: "var(--mono)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.6px",
-                }}
-              >
+              <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 10, fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: "0.6px" }}>
                 Paid now · Added to balance
               </div>
               {players.map((p, i) => {
-                const existingBal = p.customer_id
-                  ? state.customers.find((c) => c.id === p.customer_id)
-                      ?.pending_balance || 0
-                  : 0;
+                const existingBal = p.customer_id ? state.customers.find((c) => c.id === p.customer_id)?.pending_balance || 0 : 0;
+                const owed = (p.frames_lost || 0) * (table?.rate_frame || 0);
+                
                 return (
                   <div key={i} className="balance-assign-row">
                     <div style={{ flex: 1 }}>
                       <div className="bal-player-name">{p.player_name}</div>
-                      {existingBal > 0 && (
-                        <div className="bal-existing">Owes ₹{existingBal}</div>
+                      
+                      {/* Show exact W/L breakdown if playing by frames */}
+                      {session.billing_mode === 'frame' ? (
+                        <div style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--mono)', marginTop: 2 }}>
+                          <span style={{color: 'var(--red)'}}>{p.frames_lost || 0}L</span> · <span style={{color: 'var(--green)'}}>{p.frames_won || 0}W</span>
+                          <span style={{ marginLeft: 6 }}>= ₹{owed}</span>
+                        </div>
+                      ) : (
+                        existingBal > 0 && <div className="bal-existing">Owes ₹{existingBal}</div>
                       )}
                     </div>
                     <input
-                      className="bal-input"
-                      type="number"
-                      placeholder="Paid"
-                      value={playerAmounts[i] ?? ""}
-                      onChange={(e) => updatePlayerAmount(i, e.target.value)}
-                      min="0"
-                      disabled={splitType === "equal"}
-                      style={{ opacity: splitType === "custom" ? 1 : 0.6 }}
+                      className="bal-input" type="number" placeholder="Paid"
+                      value={playerAmounts[i] ?? ""} onChange={(e) => updatePlayerAmount(i, e.target.value)}
+                      min="0" disabled={splitType === "equal"} style={{ opacity: splitType === "custom" ? 1 : 0.6 }}
                     />
                     <input
-                      className="bal-input"
-                      type="number"
-                      placeholder="+ Bal"
-                      value={playerToBalance[i] ?? ""}
-                      onChange={(e) => updatePlayerBalance(i, e.target.value)}
-                      min="0"
+                      className="bal-input" type="number" placeholder="+ Bal"
+                      value={playerToBalance[i] ?? ""} onChange={(e) => updatePlayerBalance(i, e.target.value)} min="0"
                     />
                   </div>
                 );
               })}
               {splitType === "custom" && total > 0 && (
-                <div
-                  style={{
-                    fontSize: 12,
-                    fontFamily: "var(--mono)",
-                    marginTop: 10,
-                    color: assignedOk ? "var(--green)" : "var(--red)",
-                  }}
-                >
-                  {assignedOk
-                    ? "✓ Amounts balance"
-                    : `Remaining: ₹${(total - totalAssigned - totalToBalance).toFixed(0)}`}
+                <div style={{ fontSize: 12, fontFamily: "var(--mono)", marginTop: 10, color: assignedOk ? "var(--green)" : "var(--red)" }}>
+                  {assignedOk ? "✓ Amounts balance" : `Remaining: ₹${(total - totalAssigned - totalToBalance).toFixed(0)}`}
                 </div>
               )}
             </div>

@@ -6,6 +6,7 @@ import DashboardScreen from './screens/DashboardScreen'
 import PlayersScreen from './screens/PlayersScreen'
 import BalancesScreen from './screens/BalancesScreen'
 import SettingsScreen from './screens/SettingsScreen'
+import LeaderboardScreen from './screens/LeaderboardScreen'
 import './index.css'
 import AnalyticsScreen from './screens/AnalyticsScreen'
 
@@ -103,11 +104,17 @@ function AppShell() {
 }
 
 export default function App() {
+
+  if (window.location.pathname === '/leaderboard') {
+    return <LeaderboardScreen />
+  }
+  
   return (
     <ToastProvider>
       <AppProvider>
         <AppShell />
       </AppProvider>
     </ToastProvider>
+
   )
 }
