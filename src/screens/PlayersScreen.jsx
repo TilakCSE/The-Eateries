@@ -1,10 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useApp } from '../lib/store'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../lib/toast'
 import Modal from '../components/Modal'
 import { formatTime } from '../lib/billing'
-import { useEffect } from 'react'
 
 const SORTS = [
   { key: 'total_hours',  label: 'Hours' },
@@ -31,28 +30,38 @@ function rankClass(i) {
 }
 
 export default function PlayersScreen() {
-  const { state, dispatch, refreshCustomers } = useApp()
+  const { state, dispatch } = useApp()
   const showToast = useToast()
+  
+  const [searchQuery, setSearchQuery] = useState('') // New Search State
   const [sort, setSort] = useState('total_hours')
+  
   const [selected, setSelected] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
   const [addName, setAddName] = useState('')
   const [addPhone, setAddPhone] = useState('')
   const [saving, setSaving] = useState(false)
+  
   const [playerSessions, setPlayerSessions] = useState([])
   const [loadingSessions, setLoadingSessions] = useState(false)
 
-  const sorted = [...state.customers].sort((a, b) => (b[sort] || 0) - (a[sort] || 0))
+  // Filter and Sort the customers array
+  const query = searchQuery.toLowerCase()
+  const filteredAndSorted = [...state.customers]
+    .filter(c => c.name.toLowerCase().includes(query) || (c.phone && c.phone.includes(query)))
+    .sort((a, b) => (b[sort] || 0) - (a[sort] || 0))
+
+  useEffect(() => {
+    if (selected) window.history.pushState({ modalOpen: true }, '')
+    const handlePopState = () => { if (selected) setSelected(null) }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [selected])
 
   async function openPlayer(c) {
     setSelected(c)
     setLoadingSessions(true)
-    const { data } = await supabase
-      .from('session_players')
-      .select('*, sessions(*)')
-      .eq('customer_id', c.id)
-      .order('created_at', { referencedTable: 'sessions', ascending: false })
-      .limit(20)
+    const { data } = await supabase.from('session_players').select('*, sessions(*)').eq('customer_id', c.id).order('created_at', { referencedTable: 'sessions', ascending: false }).limit(20)
     setPlayerSessions(data || [])
     setLoadingSessions(false)
   }
@@ -60,11 +69,7 @@ export default function PlayersScreen() {
   async function saveCustomer() {
     if (!addName.trim()) { showToast('Enter a name', 'error'); return }
     setSaving(true)
-    const { data, error } = await supabase
-      .from('customers')
-      .insert({ name: addName.trim(), phone: addPhone.trim() || null })
-      .select()
-      .single()
+    const { data, error } = await supabase.from('customers').insert({ name: addName.trim(), phone: addPhone.trim() || null }).select().single()
     if (error) { showToast('Error saving', 'error'); setSaving(false); return }
     dispatch({ type: 'UPSERT_CUSTOMER', customer: data })
     setAddName(''); setAddPhone('')
@@ -83,35 +88,36 @@ export default function PlayersScreen() {
       </div>
 
       <div className="scroll-area">
+        <input
+          className="form-input"
+          placeholder="🔍 Search name or phone..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          style={{ marginBottom: 14, fontSize: '1.1rem', padding: '14px' }}
+        />
+        
         <div className="filter-bar">
           {SORTS.map(s => (
-            <div
-              key={s.key}
-              className={`filter-chip${sort === s.key ? ' active' : ''}`}
-              onClick={() => setSort(s.key)}
-            >{s.label}</div>
+            <div key={s.key} className={`filter-chip${sort === s.key ? ' active' : ''}`} onClick={() => setSort(s.key)}>{s.label}</div>
           ))}
         </div>
 
-        {sorted.length === 0 ? (
+        {filteredAndSorted.length === 0 ? (
           <div className="empty">
             <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            <p>No players yet.<br />Add players or link them during sessions.</p>
+            <p>No players found.</p>
           </div>
-        ) : sorted.map((c, i) => {
+        ) : filteredAndSorted.map((c, i) => {
           const { val, lbl } = statDisplay(c, sort)
           return (
             <div key={c.id} className="player-row" onClick={() => openPlayer(c)}>
-              <div className={`rank-num ${rankClass(i)}`}>{i + 1}</div>
+              {/* Only show ranks if there is no search filter applied */}
+              {searchQuery === '' && <div className={`rank-num ${rankClass(i)}`}>{i + 1}</div>}
               <div className="player-avatar">{c.name[0].toUpperCase()}</div>
               <div className="player-info">
                 <div className="player-name">
                   {c.name}
-                  {c.pending_balance > 0 && (
-                    <span style={{ fontSize: 11, color: 'var(--red)', fontFamily: 'var(--mono)', marginLeft: 6 }}>
-                      ₹{c.pending_balance} owed
-                    </span>
-                  )}
+                  {c.pending_balance > 0 && <span style={{ fontSize: 11, color: 'var(--red)', fontFamily: 'var(--mono)', marginLeft: 6 }}>₹{c.pending_balance} owed</span>}
                 </div>
                 <div className="player-meta">{c.phone || 'No phone'}</div>
               </div>
@@ -136,9 +142,7 @@ export default function PlayersScreen() {
                   {selected.phone || 'No phone'} · since {new Date(selected.join_date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
                 </div>
                 {selected.pending_balance > 0 && (
-                  <div style={{ marginTop: 4, fontSize: 12, color: 'var(--red)', fontFamily: 'var(--mono)' }}>
-                    Pending balance: ₹{selected.pending_balance}
-                  </div>
+                  <div style={{ marginTop: 4, fontSize: 12, color: 'var(--red)', fontFamily: 'var(--mono)' }}>Pending balance: ₹{selected.pending_balance}</div>
                 )}
               </div>
             </div>
@@ -165,18 +169,23 @@ export default function PlayersScreen() {
             ) : playerSessions.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--text3)', padding: '8px 0' }}>No sessions recorded yet.</div>
             ) : playerSessions.map(sp => (
-              <div key={sp.id} className="history-row">
-                <div className="history-date">
-                  {sp.sessions ? new Date(sp.sessions.start_time).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}
+              <div key={sp.id} className="history-row" style={{ padding: '12px' }}>
+                <div className="history-date" style={{ minWidth: '65px' }}>
+                  <div style={{ fontWeight: 600, color: 'var(--text)' }}>
+                    {sp.sessions ? new Date(sp.sessions.start_time).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
+                    {sp.sessions ? new Date(sp.sessions.start_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}
+                  </div>
                 </div>
                 <div className="history-info">
-                  <div className="history-table">{sp.sessions?.table_name || '—'}</div>
+                  <div className="history-table" style={{ fontSize: 14 }}>{sp.sessions?.table_name || '—'}</div>
                   <div className="history-detail">
                     {sp.sessions?.billing_mode === 'frame' ? sp.sessions.frames + ' frames' : formatTime(sp.sessions?.elapsed_seconds || 0)}
                     {sp.balance_added > 0 && <span style={{ color: 'var(--red)', marginLeft: 6 }}>+₹{sp.balance_added} to balance</span>}
                   </div>
                 </div>
-                <div className="history-amount clr-green">₹{sp.amount_paid}</div>
+                <div className="history-amount clr-green" style={{ fontSize: 16 }}>₹{sp.amount_paid}</div>
               </div>
             ))}
           </>

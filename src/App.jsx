@@ -7,6 +7,7 @@ import PlayersScreen from './screens/PlayersScreen'
 import BalancesScreen from './screens/BalancesScreen'
 import SettingsScreen from './screens/SettingsScreen'
 import './index.css'
+import AnalyticsScreen from './screens/AnalyticsScreen'
 
 const NAV = [
   {
@@ -42,6 +43,15 @@ const NAV = [
     ),
   },
   {
+    id: 'analytics',
+    label: 'Stats',
+    icon: (
+      <svg viewBox="0 0 24 24">
+        <path d="M18 20V10M12 20V4M6 20v-6" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    ),
+  },
+  {
     id: 'settings',
     label: 'Settings',
     icon: (
@@ -54,32 +64,39 @@ const NAV = [
 ]
 
 function AppShell() {
-  const [authed, setAuthed] = useState(false)
+  const [authed, setAuthed] = useState(() => {
+    const expiry = localStorage.getItem('authExpiry')
+    return expiry && parseInt(expiry) > Date.now()
+  })
   const [tab, setTab] = useState('dashboard')
 
-  if (!authed) return <PinScreen onAuth={() => setAuthed(true)} />
+  function handleAuthSuccess() {
+    const twoHours = Date.now() + (2 * 60 * 60 * 1000)
+    localStorage.setItem('authExpiry', twoHours.toString())
+    setAuthed(true)
+  }
+
+  if (!authed) return <PinScreen onAuth={handleAuthSuccess} />
 
   return (
     <div className="app-shell">
       {tab === 'dashboard' && <DashboardScreen />}
       {tab === 'balances'  && <BalancesScreen />}
       {tab === 'players'   && <PlayersScreen />}
+      {tab === 'analytics' && <AnalyticsScreen />}
       {tab === 'settings'  && <SettingsScreen />}
 
       <nav className="bottom-nav">
-        {NAV.map(n => {
-          // Show red dot on Balances tab if anyone has a pending balance
-          return (
-            <button
-              key={n.id}
-              className={`nav-item${tab === n.id ? ' active' : ''}`}
-              onClick={() => setTab(n.id)}
-            >
-              {n.icon}
-              {n.label}
-            </button>
-          )
-        })}
+        {NAV.map(n => (
+          <button
+            key={n.id}
+            className={`nav-item${tab === n.id ? ' active' : ''}`}
+            onClick={() => setTab(n.id)}
+          >
+            {n.icon}
+            {n.label}
+          </button>
+        ))}
       </nav>
     </div>
   )
